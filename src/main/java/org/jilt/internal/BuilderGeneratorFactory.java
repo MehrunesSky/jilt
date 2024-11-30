@@ -13,6 +13,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -20,6 +21,7 @@ import java.util.Set;
 
 public final class BuilderGeneratorFactory {
     private static final Set<String> ALLOWED_TYPE_KINDS;
+
     static {
         ALLOWED_TYPE_KINDS = new HashSet<String>(2);
         ALLOWED_TYPE_KINDS.add(ElementKind.CLASS.name());
@@ -29,17 +31,19 @@ public final class BuilderGeneratorFactory {
 
     private final Filer filer;
     private final Elements elements;
+    private final Types types;
 
-    public BuilderGeneratorFactory(Filer filer, Elements elements) {
+    public BuilderGeneratorFactory(Filer filer, Elements elements, Types types) {
         this.filer = filer;
         this.elements = elements;
+        this.types = types;
     }
 
     public BuilderGenerator forElement(Element annotatedElement, RoundEnvironment roundEnv) throws Exception {
         return annotatedElement.getKind() == ElementKind.ANNOTATION_TYPE
                 ? this.new MetaAnnotationBuilderGenerator((TypeElement) annotatedElement, roundEnv)
                 : this.forNonAnnotationElement(annotatedElement, annotatedElement.getAnnotation(Builder.class),
-                     annotatedElement.getAnnotation(BuilderInterfaces.class));
+                annotatedElement.getAnnotation(BuilderInterfaces.class));
     }
 
     private final class MetaAnnotationBuilderGenerator implements BuilderGenerator {
@@ -65,7 +69,7 @@ public final class BuilderGeneratorFactory {
     }
 
     private BuilderGenerator forNonAnnotationElement(Element annotatedElement, Builder builderAnnotation,
-            BuilderInterfaces builderInterfaces) throws Exception {
+                                                     BuilderInterfaces builderInterfaces) throws Exception {
         TypeElement targetClass;
         List<? extends VariableElement> attributes;
         ExecutableElement targetCreationMethod;
@@ -103,18 +107,18 @@ public final class BuilderGeneratorFactory {
             case STAGED:
             case TYPE_SAFE:
                 return new TypeSafeBuilderGenerator(targetClass, attributes, builderAnnotation,
-                        builderInterfaces, targetCreationMethod, elements, filer);
+                        builderInterfaces, targetCreationMethod, elements, types, filer);
             case STAGED_PRESERVING_ORDER:
             case TYPE_SAFE_UNGROUPED_OPTIONALS:
                 return new TypeSafeUngroupedOptionalsBuilderGenerator(targetClass, attributes, builderAnnotation,
-                        builderInterfaces, targetCreationMethod, elements, filer);
+                        builderInterfaces, targetCreationMethod, elements, types, filer);
             case FUNCTIONAL:
                 return new FunctionalBuilderGenerator(targetClass, attributes, builderAnnotation,
-                        builderInterfaces, targetCreationMethod, elements, filer);
+                        builderInterfaces, targetCreationMethod, elements, types, filer);
             case CLASSIC:
             default:
                 return new ClassicBuilderGenerator(targetClass, attributes, builderAnnotation,
-                        targetCreationMethod, elements, filer);
+                        targetCreationMethod, elements, types, filer);
         }
     }
 

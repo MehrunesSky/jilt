@@ -27,6 +27,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Target;
 import java.util.ArrayList;
@@ -34,6 +35,7 @@ import java.util.List;
 
 abstract class AbstractBuilderGenerator implements BuilderGenerator {
     private final Elements elements;
+    private final Types types;
     private final Filer filer;
     private final Element optElement;
 
@@ -46,9 +48,10 @@ abstract class AbstractBuilderGenerator implements BuilderGenerator {
     private final ClassName builderClassClassName;
 
     AbstractBuilderGenerator(TypeElement targetClass, List<? extends VariableElement> attributes,
-            Builder builderAnnotation, ExecutableElement targetCreationMethod,
-            Elements elements, Filer filer) {
+                             Builder builderAnnotation, ExecutableElement targetCreationMethod,
+                             Elements elements, Types types, Filer filer) {
         this.elements = elements;
+        this.types = types;
         this.filer = filer;
         this.optElement = this.elements.getTypeElement(Opt.class.getCanonicalName());
 
@@ -92,8 +95,8 @@ abstract class AbstractBuilderGenerator implements BuilderGenerator {
             builderClassBuilder.addField(FieldSpec
                     .builder(fieldType, fieldName,
                             this.builderClassNeedsToBeAbstract()
-                                ? Modifier.PROTECTED
-                                : Modifier.PRIVATE)
+                                    ? Modifier.PROTECTED
+                                    : Modifier.PRIVATE)
                     .build());
 
             MethodSpec setterMethod = this.generateBuilderSetterMethod(attribute);
@@ -237,10 +240,63 @@ abstract class AbstractBuilderGenerator implements BuilderGenerator {
     private List<String> attributeNames() {
         List<String> ret = new ArrayList<String>(attributes.size());
         for (VariableElement attribute : attributes) {
-            ret.add(attributeSimpleName(attribute));
+            String attributeName = attributeSimpleName(attribute);
+
+            Element listElement = elements.getTypeElement("java.util.List");
+            if (listElement == null) {
+                throw new IllegalStateException("Impossible de trouver java.util.List dans le classpath");
+            }
+
+            Element setElement = elements.getTypeElement("java.util.Set");
+            if (listElement == null) {
+                throw new IllegalStateException("Impossible de trouver java.util.List dans le classpath");
+            }
+
+            Element mapElement = elements.getTypeElement("java.util.Map");
+            if (listElement == null) {
+                throw new IllegalStateException("Impossible de trouver java.util.Map dans le classpath");
+            }
+
+            Element collectionElement = elements.getTypeElement("java.util.Collection");
+            if (listElement == null) {
+                throw new IllegalStateException("Impossible de trouver java.util.Collection dans le classpath");
+            }
+
+            var toto = types.getDeclaredType(
+                    elements.getTypeElement("java.util.Collection"),
+                    types.getWildcardType(null, null)
+            );
+
+            var mapDeclaredType = types.getDeclaredType(
+                    elements.getTypeElement("java.util.Map"),
+                    types.getWildcardType(null, null),
+                    types.getWildcardType(null, null)
+            );
+
+            if (types.isAssignable(attribute.asType(), toto)) {
+                var attributeWithoutWildcard = types.asElement(attribute.asType()).asType();
+
+                if (types.isSameType(attributeWithoutWildcard, listElement.asType())) {
+                    ret.add("List.copyOf(" + attributeName + ")");
+                } else if (types.isSameType(attributeWithoutWildcard, setElement.asType())) {
+                    ret.add("Set.copyOf(" + attributeName + ")");
+                } else {
+                    ret.add(attributeName);
+                }
+            } else if (types.isAssignable(attribute.asType(), mapDeclaredType)) {
+                var attributeWithoutWildcard = types.asElement(attribute.asType()).asType();
+                if (types.isSameType(attributeWithoutWildcard, elements.getTypeElement("java.util.Map").asType())) {
+                    ret.add("Map.copyOf(" + attributeName + ")");
+                } else {
+                    ret.add(attributeName);
+                }
+            } else {
+                ret.add(attributeName);
+            }
         }
         return ret;
     }
+
 
     protected abstract void generateClassesNeededByBuilder() throws Exception;
 
@@ -254,7 +310,7 @@ abstract class AbstractBuilderGenerator implements BuilderGenerator {
     }
 
     protected MethodSpec generateSetterMethod(VariableElement attribute,
-            boolean mangleTypeParameters, boolean abstractMethod) {
+                                              boolean mangleTypeParameters, boolean abstractMethod) {
         String fieldName = this.attributeSimpleName(attribute);
         TypeName parameterType = this.attributeType(attribute, mangleTypeParameters);
         MethodSpec.Builder setter = MethodSpec
@@ -281,7 +337,7 @@ abstract class AbstractBuilderGenerator implements BuilderGenerator {
     protected abstract TypeName returnTypeForSetterFor(VariableElement attribute, boolean withMangledTypeParameters);
 
     protected final TypeName attributeType(VariableElement attribute,
-            boolean withMangledTypeParameters) {
+                                           boolean withMangledTypeParameters) {
         TypeName ret = TypeName.get(attribute.asType());
         return withMangledTypeParameters ? this.mangleTypeName(ret) : ret;
     }
@@ -323,7 +379,7 @@ abstract class AbstractBuilderGenerator implements BuilderGenerator {
                 // if this is an entire parameterized type, we need to mangle it recursively
                 ParameterizedTypeName parameterizedTypeName = (ParameterizedTypeName) typeParameter;
                 ret.add(ParameterizedTypeName.get(parameterizedTypeName.rawType,
-                    this.mangleTypeParameters(parameterizedTypeName.typeArguments).toArray(new TypeName[]{})));
+                        this.mangleTypeParameters(parameterizedTypeName.typeArguments).toArray(new TypeName[]{})));
             } else {
                 ret.add(typeParameter);
             }
@@ -423,7 +479,7 @@ abstract class AbstractBuilderGenerator implements BuilderGenerator {
         return typeVariableNames.isEmpty()
                 ? this.builderClassClassName
                 : ParameterizedTypeName.get(this.builderClassClassName,
-                    typeVariableNames.toArray(new TypeVariableName[0]));
+                typeVariableNames.toArray(new TypeVariableName[0]));
     }
 
     protected final List<TypeVariableName> builderClassTypeParameters() {
